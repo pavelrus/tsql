@@ -17,6 +17,8 @@ select 104, '19000101', '22000101', 4001 union all
 select 105, '19000101', '22000101', 4001;
 */
 
+--create index f_t_idx on [dbo].[demo](f, t);
+
 if object_id('tempdb..#s') <> 0 drop table #s;
 
 create table #s(
@@ -25,13 +27,13 @@ create table #s(
 	,primary key(id));
 
 insert #s
-select 101, 4001 union all
-select 102, 4001 union all
-select 103, 4003 union all
-select 104, 4005 union all
-select 105, 4004 union all
-select 106, 4001 union all
-select 107, 4001;
+select 101, 4008 union all
+select 102, 4008 union all
+select 103, 4008 union all
+select 104, 4008 union all
+select 105, 4008 union all
+select 106, 4008 union all
+select 107, 4008;
 
 declare @td date = '20180625' --getdate();
 declare @y date = cast(@td as datetime) - 1;
