@@ -86,7 +86,7 @@ from (select
 					end
 			end commandType
 		from ((select [uid], id, f, t, p from dbo.demo where @td between f and t)d
-				full join (select [uid], id, f, t, p from dbo.demo where @y between f and t)dy
+				full join (select [uid], id, f, t, p from dbo.demo where t = @y)dy
 					on dy.id = d.id)
 			full join #s s on s.id = isnull(d.id, dy.id))t
 where not t.commandType is null;

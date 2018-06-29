@@ -1,13 +1,3 @@
---create table dbo.data_log(
---	[uid] int not null identity(1, 1)
---	,ts datetime not null default getdate()
---	,id_client int not null
---	,id int
---	,id_y int
---	,id_property int
---	,commandType smallint not null
---	,primary key([uid]));
-
 --create table dbo.[data](
 --	id int identity(1, 1)
 --	,id_client int not null
@@ -37,19 +27,19 @@ create table #stageData(
 	,primary key(id_client));
 
 insert #stageData
---select 101, 4001 union all
-select 102, 4001 union all
+select 101, 4001 union all
+select 102, 4002 union all
 select 103, 4001 union all
 select 104, 4001 union all
 select 105, 4001 union all
-select 106, 4003 union all
-select 107, 4002 --union all
---select 108, 4008 union all
---select 112, 4002 union all
---select 113, 4001 union all
---select 114, 4005 union all
---select 115, 4001 union all
---select 116, 4006;
+select 106, 4008 union all
+select 107, 4008 union all
+select 108, 4008 union all
+select 112, 4002 union all
+select 113, 4001 union all
+select 114, 4005 union all
+select 115, 4001 union all
+select 116, 4006;
 
 declare @toDay date = '20180603'; --getdate();
 declare @yesterDay date = cast(@toDay as datetime) - 1;
@@ -88,7 +78,7 @@ create table #changedData(
 	,id_property int
 	,commandType smallint not null
 	,primary key(id_client));
-create index commandType_idx on #changedData(commandType) include(id, id_y, id_property);
+create index commandType_idx on #changedData(commandType);
 
 insert #changedData(id_client, id, id_y, id_property, commandType)
 select
@@ -103,39 +93,90 @@ from (select
 			,dy.id id_y
 			,s.id_property
 			,case
-				when s.id_client is null then
+				when s.id_client is null and d.date_to > @toDay then
 					case
-						when d.date_to > @toDay then
-							case
-								when d.date_from = @toDay then 1 -- upd d.t = @toDay
-								else 3 -- upd d.t = @yesterDay
-							end
+						when d.date_from = @toDay then 1 -- upd d.t = @toDay
+						else 3 -- upd d.t = @yesterDay
 					end
 				else
 					case
-						when d.id_client is null then
+						when dy.id_client is null then
 							case
-								when dy.id_property = s.id_property then 7 -- upd dy.t = @maxDate
-								when dy.id_property <> s.id_property or dy.id_client is null then 100 -- ins (@toDay, @maxDate, s.p)
+								when d.id_client is null then 100 -- ins (@toDay, @maxDate, s.p)
+								when d.id_property = s.id_property then
+									case 
+										when d.date_to = @toDay then 2 -- upd d.t = @maxDate
+									end
+								else
+									case
+										when d.date_from < @toDay and d.date_to > @toDay then 103 -- upd d.t = @yesterDay, ins (@toDay, @maxDate, s.p)
+										when d.date_from = @toDay and d.date_to > @toDay then 10 -- upd d.p = s.p
+										when d.date_from = @toDay and d.date_to = @toDay then 12 -- upd d.p = s.p, d.t = @maxDate
+									end
 							end
-						when dy.id_property = s.id_property then 1007 -- del d upd dy.t = @maxDate
-						when d.id_property = s.id_property and d.date_to = @toDay then 2 -- upd d.t = @maxDate
-						when d.id_property <> s.id_property then
+						else
 							case
-								when d.date_from = @toDay and d.date_to = @toDay then 12 -- upd d.p = s.p, d.t = @maxDate
-								when d.date_from = @toDay and d.date_to > @toDay then 10 -- upd d.p = s.p
-								when d.date_from < @toDay and d.date_to > @toDay then 103 -- upd d.t = @yesterDay, ins (@toDay, @maxDate, s.p)
+								when d.id_client is null then
+									case
+										when dy.id_property = s.id_property then 7 -- upd dy.t = @maxDate
+										when dy.id_property <> s.id_property then 100 -- ins (@toDay, @maxDate, s.p)
+									end
+								else 
+									case
+										when dy.id_property = s.id_property then 1007 -- del d.uid upd dy.t = @maxDate
+										else
+											case
+												when d.id_property <> s.id_property then
+													case
+														when d.date_to = @toDay then 12 -- upd d.p = s.p, d.t = @maxDate
+														when d.date_to > @toDay then 10 -- upd d.p = s.p
+													end
+												else
+													case
+														when d.date_to = @toDay then 2 -- upd d.t = @maxDate
+													end
+											end
+									end
 							end
 					end
 			end commandType
+			
+			--,case
+			--	when d.date_from < @toDay and d.date_to > @toDay then
+			--		case
+			--			when s.id_client is null then 3 -- upd d.t = @yesterDay
+			--			when d.id_property <> s.id_property then 103 -- upd d.t = @yesterDay, ins (@toDay, @maxDate, s.p)
+			--		end
+			--	when d.date_from < @toDay and d.date_to = @toDay then
+			--		case
+			--			when d.id_property = s.id_property then 2 -- upd d.t = @maxDate
+			--			when d.id_property <> s.id_property then 103 -- upd d.t = @yesterDay, ins (@toDay, @maxDate, s.p)
+			--		end
+			--	when d.date_from = @toDay and d.date_to > @toDay then
+			--		case
+			--			when s.id_client is null then 1 -- upd d.t = @toDay
+			--			when dy.id_property = s.id_property then 1007 -- del d.uid upd dy.t = @maxDate
+			--			when d.id_property <> s.id_property then 10 -- upd d.p = s.p
+			--		end
+			--	when d.date_from = @toDay and d.date_to = @toDay then
+			--		case
+			--			when dy.id_property = s.id_property then 1007 -- del d.uid upd dy.t = @maxDate
+			--			when d.id_property <> s.id_property then 12 -- upd d.p = s.p, d.t = @maxDate
+			--			when d.id_property = s.id_property then 2 -- upd d.t = @maxDate
+			--		end
+			--	when d.id_client is null then
+			--		case
+			--			when dy.id_property <> s.id_property or dy.id_client is null then 100 -- ins (@toDay, @maxDate, s.p)
+			--			when dy.id_property = s.id_property then 7 -- upd dy.t = @maxDate
+			--		end
+			--end commandType
 		from (#dwhData d
 				full join #dwhDataOnYesterday dy
 					on dy.id_client = d.id_client)
 			full join #stageData s on s.id_client = isnull(d.id_client, dy.id_client))t
 where not t.commandType is null;
 
-insert dbo.data_log([id_client],[id],[id_y],[id_property],[commandType])
-select [id_client],[id],[id_y],[id_property],[commandType] from #changedData;
+return
 
 set xact_abort on;
 
