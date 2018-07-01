@@ -19,6 +19,12 @@ select 100, 101, '20180601' union all
 select 101, 102, '20180602' union all
 select 102, 103, '20180603' union all
 select 103, 104, '20180604' union all
+select 150, 104, '20180604' union all
+select 151, 104, '20180604' union all
+select 104, 104, '20180604' union all
+--select 151, 104, '20180604' union all
+select 151, 109, '20180604' union all
+--select 151, 109, '20180604' union all
 select 105, 106, '20180605' union all
 select 106, 107, '20180606' union all
 select 108, 109, '20180607' union all
@@ -44,7 +50,18 @@ if object_id('tempdb..#mstData') <> 0 drop table #mstData;
 create table #mstData(id_client_from int not null, id_client_to int not null,primary key(id_client_from, id_client_to));
 
 insert #dwhData
-select id_client_from, id_client_to, max(date_from)  from parent_child where id_client_from <> id_client_to group by id_client_from, id_client_to;
+select
+	t.id_client_from
+	,t.id_client_to
+	,t.date_from
+from (select
+			id_client_from
+			,id_client_to
+			,date_from
+			,row_number() over(partition by id_client_from order by date_from desc) rn
+		from parent_child
+		where id_client_from <> id_client_to)t
+where t.rn = 1;
 
 insert #tmpData
 select * from #dwhData;
@@ -54,7 +71,6 @@ select * from #dwhData;
 
 insert #mstData
 select id_client_from, id_client_to from #dwhData where not id_client_to in (select id_client_from from #dwhData);
-
 
 while 1 = 1
 begin
@@ -113,3 +129,5 @@ from #bufData b
 order by
 	b.id_client_to
 	,b.id_client_from;
+
+--select * from #mstData
