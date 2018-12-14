@@ -27,8 +27,8 @@ insert #entries
 select 'ASD', '100010001', '20180101', 100, 0, 0 union all
 select 'ASD', '100010001', '20180112', -90, 0, 0 union all
 select 'ASD', '100010001', '20180122', 8, 0, 0 union all
-select 'ASD', '100010001', '20180125', 26, 1, 1 union all
-select 'ASD', '100010001', '20180127', 100, 0, 1 union all
+select 'ASD', '100010001', '20180125', 26, 0, 0 union all
+select 'ASD', '100010001', '20180124', 100, 0, 1 union all
 select 'ASD', '100010001', '20180127', 1, 0, 1 union all
 select 'ASD', '100010001', '20180128', -1, 0, 1 union all
 select 'ASD', '100010002', '20180128', 33, 0, 1 union all
@@ -78,6 +78,15 @@ create table #rem_final(
   date_to date not null,
   rn smallint not null,
   primary key (account_id, branch, date_from));
+
+drop table if exists #rem_previous;
+create table #rem_previous(
+  branch varchar(8) not null,
+  account_id varchar(25) not null,
+  date_from date not null,
+  date_to date not null,
+  is_upd bit not null default 0
+  primary key (account_id, branch));
 
  -- 
 insert #entries_updated
@@ -130,7 +139,8 @@ from (select
               e.branch,
               e.account_id,
               e.value_date)t)t
-  left join #rem_in r on r.account_id = t.account_id
+  left join #rem_in r on r.rn = 1
+    and r.account_id = t.account_id
     and r.branch = t.branch;
 
 truncate table #rem_final;
@@ -148,6 +158,41 @@ from (select branch, account_id, date_from value_date, rub_sum_out, rn from #rem
       union all
       select branch, account_id, value_date, rub_sum_out, -1 from #entries_cumulative_totals)t;
 
+truncate table #rem_previous;
+
+insert #rem_previous(branch, account_id, date_from, date_to)
+select
+  branch,
+  account_id,
+  date_from,
+  date_to
+from (select
+        r.branch,
+        r.account_id,
+        r.date_from,
+        r.date_to,
+        row_number() over (partition by r.branch, r.account_id order by r.date_from desc) rn
+      from #rem r
+        join #entries_updated_buf t on t.account_id = r.account_id
+          and t.branch = r.branch
+      where r.date_to < t.value_date)t
+where rn = 1;
+
+update rp set
+  date_to = rf.date_to,
+  is_upd = 1
+from #rem_previous rp
+  join (select
+          branch,
+          account_id,
+          dateadd(day, -1, min(date_from)) date_to
+        from #rem_final
+        where rn = -1
+        group by branch, account_id)rf
+    on rf.account_id = rp.account_id
+      and rf.branch = rp.branch
+where rp.date_to <> rf.date_to;
+
 begin tran
 
 delete #rem
@@ -163,6 +208,14 @@ from #rem r
     and rf.account_id = r.account_id
     and rf.branch = r.branch
     and rf.date_from = r.date_from;
+
+update r set
+  r.date_to = rp.date_to
+from #rem r
+  join #rem_previous rp on rp.is_upd = 1
+    and rp.account_id = r.account_id
+    and rp.branch = r.branch
+    and rp.date_from = r.date_from;
 
 insert #rem
 select
