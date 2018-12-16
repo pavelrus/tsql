@@ -27,8 +27,8 @@ insert #entries
 select 'ASD', '100010001', '20180101', 100, 0, 0 union all
 select 'ASD', '100010001', '20180112', -90, 0, 0 union all
 select 'ASD', '100010001', '20180122', 8, 0, 0 union all
-select 'ASD', '100010001', '20180125', 26, 1, 1 union all
-select 'ASD', '100010001', '20180122', 100, 0, 1 union all
+select 'ASD', '100010001', '20180125', 26, 0, 0 union all
+select 'ASD', '100010001', '20180120', 100, 0, 1 union all
 select 'ASD', '100010001', '20180127', 1, 0, 1 union all
 select 'ASD', '100010001', '20180128', -1, 0, 1 union all
 select 'ASD', '100010002', '20180128', 33, 0, 1 union all
@@ -60,6 +60,7 @@ create table #rem_in(
   date_to date not null,
   rn smallint not null,
   is_del bit not null,
+  date_to_previous date,
   primary key (account_id, branch, date_from));
 
 if object_id('tempdb..#entries_rem') <> 0 drop table #entries_rem;
@@ -98,18 +99,44 @@ begin
 
 	insert #rem_in
 	select
-	  r.branch,
-	  r.account_id,
-	  iif(r.date_from = t.value_date, r.rub_sum_in, r.rub_sum) rub_sum,
-	  r.date_from,
-	  r.date_to,
-	  row_number() over (partition by r.branch, r.account_id order by r.date_from) rn,
-	  iif(r.date_from = t.value_date, 1, 0) is_del
-	from #rem r
-	  join #entries_updated_buf t on t.account_id = r.account_id
-		and t.branch = r.branch
-	where r.date_to >= t.value_date;
+		branch,
+		account_id,
+		rub_sum,
+		date_from,
+		date_to,
+		rn,
+		is_del,
+		dateadd(day, iif(rn = 1, -1, 0), date_from) date_to_previous
+	from (select
+			  r.branch,
+			  r.account_id,
+			  iif(r.date_from = t.value_date, r.rub_sum_in, r.rub_sum) rub_sum,
+			  r.date_from,
+			  r.date_to,
+			  row_number() over (partition by r.branch, r.account_id order by r.date_from) rn,
+			  iif(r.date_from = t.value_date, 1, 0) is_del
+			from #rem r
+			  join #entries_updated_buf t on t.account_id = r.account_id
+				and t.branch = r.branch
+			where r.date_to >= t.value_date)t;
 
+	insert #rem_in
+	select
+		r.branch,
+		r.account_id,
+		r.rub_sum,
+		r.date_from,
+		r.date_to,
+		0 rn,
+		0 is_del,
+		null date_to_previous
+	from #rem r
+		join #rem_in ri on ri.account_id = r.account_id
+			and ri.branch = r.branch
+			and ri.date_to_previous = r.date_to
+			and ri.rn = 1
+			and ri.is_del = 1;
+	
 	truncate table #entries_rem;
 
 	insert #entries_rem
@@ -155,14 +182,32 @@ begin
 	from (select branch, account_id, date_from value_date, rub_sum, rn from #rem_in where rn = 1
 		  union all
 		  select branch, account_id, value_date, rub_sum, -1 from #entries_rem)t;
+	
+	insert #rem_final
+	select
+		ri.branch,
+		ri.account_id,
+		0 rub_sum_in,
+		0 rub_sum,
+		ri.date_from,
+		rf.date_to,
+		ri.rn
+	from #rem_in ri
+		join #rem_final rf on rf.account_id = ri.account_id
+			and rf.branch = ri.branch
+			and rf.rn = 1
+	where ri.rn = 0;
 
+	--select * from #rem_final
+	--select * from #rem_in
+	
 	begin tran
 
 	delete #rem
 	from #rem_in ri 
 	where ri.account_id = #rem.account_id
 	  and ri.branch = #rem.branch
-	  and ri.date_to = #rem.date_to
+	  and ri.date_from = #rem.date_from
 	  and (ri.rn > 1 or ri.is_del = 1);
 
 	update r set
@@ -171,7 +216,7 @@ begin
 	  join #rem_final rf on rf.account_id = r.account_id
 		and rf.branch = r.branch
 		and rf.date_from = r.date_from
-		and rf.rn = 1;
+		and rf.rn in (0, 1);
 
 	insert #rem
 	select
